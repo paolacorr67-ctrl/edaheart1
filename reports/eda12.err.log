@@ -1,4 +1,15 @@
 Traceback (most recent call last):
+  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 778, in _async_poll_for_reply
+    msg = await ensure_async(self.kc.shell_channel.get_msg(timeout=new_timeout))
+  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\jupyter_core\utils\__init__.py", line 182, in ensure_async
+    result = await obj
+  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\jupyter_client\channels.py", line 315, in get_msg
+    raise Empty
+_queue.Empty
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
   File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\jupyter_cache\executors\utils.py", line 58, in single_nb_execution
     executenb(
   File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 1305, in execute
@@ -9,251 +20,18 @@ Traceback (most recent call last):
     return future.result()
   File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 705, in async_execute
     await self.async_execute_cell(
-  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 1058, in async_execute_cell
-    await self._check_raise_for_error(cell, cell_index, exec_reply)
-  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 914, in _check_raise_for_error
-    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
-nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
-------------------
-from sklearn.metrics import precision_recall_curve
-import numpy as np
-
-#  1. Separar variables 
-X = df.drop(columns="HeartDiseaseorAttack")
-y = df["HeartDiseaseorAttack"]
-
-num_cols = ["BMI", "MentHlth", "PhysHlth"]
-ord_cols = ["GenHlth", "Age", "Education", "Income", "Diabetes"]
-bin_cols = ["HighBP", "HighChol", "CholCheck", "Smoker", "Stroke",
-            "PhysActivity", "Fruits", "Veggies", "HvyAlcoholConsump",
-            "AnyHealthcare", "NoDocbcCost", "DiffWalk", "Sex"]
-
-#  2. Split estratificado 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
-
-#  3. Preprocesador corregido 
-# MinMaxScaler solo a continuas, ordinales y binarias pasan sin escalar
-preprocessor = ColumnTransformer([
-    ("num", MinMaxScaler(), num_cols),
-    ("ord", "passthrough",  ord_cols),
-    ("bin", "passthrough",  bin_cols)
-])
-
-#  4. scale_pos_weight para XGBoost
-negativos = (y_train == 0).sum()
-positivos  = (y_train == 1).sum()
-scale      = negativos / positivos
-print(f"scale_pos_weight para XGBoost: {scale:.2f}")
-
-#  5. Función de entrenamiento 
-def train_pipeline(X_train, y_train, model, param_grid):
-    pipe = Pipeline([
-        ("preprocessor", preprocessor),
-        ("clf", model)
-    ])
-    grid = GridSearchCV(
-        pipe, param_grid,
-        cv=5,
-        scoring="recall",
-        n_jobs=-1,
-        verbose=0
-    )
-    grid.fit(X_train, y_train)
-    return grid
-
-#  6. Definición de modelos 
-modelos = {
-    "LogisticRegression": (
-        LogisticRegression(max_iter=1000, class_weight="balanced"),
-        {
-            "clf__C": [0.01, 0.1, 1, 10],
-            "clf__solver": ["lbfgs", "liblinear"]
-        }
-    ),
-    "RandomForest": (
-        RandomForestClassifier(random_state=42, class_weight="balanced"),
-        {
-            "clf__n_estimators": [100, 200],
-            "clf__max_depth": [None, 5, 10],
-            "clf__min_samples_split": [2, 5]
-        }
-    ),
-    "KNeighbors": (
-        KNeighborsClassifier(),
-        {
-            "clf__n_neighbors": [3, 5, 7, 11],
-            "clf__weights": ["uniform", "distance"]
-        }
-    ),
-    "LinearSVC": (
-        CalibratedClassifierCV(LinearSVC(class_weight="balanced", max_iter=2000)),
-        {
-            "clf__estimator__C": [0.01, 0.1, 1, 10]
-        }
-    ),
-    "XGBoost": (
-        XGBClassifier(
-            random_state=42,
-            scale_pos_weight=scale,
-            eval_metric="logloss",
-            verbosity=0
-        ),
-        {
-            "clf__n_estimators":  [100, 200],
-            "clf__max_depth":     [3, 5],
-            "clf__learning_rate": [0.05, 0.1],
-            "clf__subsample":     [0.8, 1.0]
-        }
-    )
-}
-
-#  7. Entrenamiento y evaluación 
-resultados = []
-grids_entrenados = {}
-
-for nombre, (modelo, param_grid) in modelos.items():
-    print(f"Entrenando {nombre}...")
-    grid = train_pipeline(X_train, y_train, modelo, param_grid)
-    grids_entrenados[nombre] = grid
-
-    y_pred  = grid.predict(X_test)
-    y_proba = grid.predict_proba(X_test)[:, 1]
-
-    resultados.append({
-        "Modelo":          nombre,
-        "Accuracy":        round(accuracy_score(y_test, y_pred), 4),
-        "Precision":       round(precision_score(y_test, y_pred), 4),
-        "Recall":          round(recall_score(y_test, y_pred), 4),
-        "F1":              round(f1_score(y_test, y_pred), 4),
-        "AUC-ROC":         round(roc_auc_score(y_test, y_proba), 4),
-        "Mejor Recall CV": round(grid.best_score_, 4)
-    })
-    print(f"  Recall: {resultados[-1]['Recall']} | F1: {resultados[-1]['F1']} | AUC: {resultados[-1]['AUC-ROC']}")
-
-#  8. Ranking comparativo 
-df_resultados = pd.DataFrame(resultados).sort_values("Recall", ascending=False).reset_index(drop=True)
-df_resultados.index += 1
-print("\n── Ranking comparativo ──")
-display(df_resultados.style.hide(axis="index"))
-
-# 9. Mejor modelo
-mejor_nombre = df_resultados.iloc[0]["Modelo"]
-mejor_grid   = grids_entrenados[mejor_nombre]
-print(f"\nMejor modelo: {mejor_nombre}")
-print(f"Mejores hiperparámetros: {mejor_grid.best_params_}")
-
-#  10. Matrices de confusión 
-fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-axes = axes.flatten()
-
-for i, (nombre, grid) in enumerate(grids_entrenados.items()):
-    y_pred = grid.predict(X_test)
-    cm = confusion_matrix(y_test, y_pred)
-    disp = ConfusionMatrixDisplay(cm, display_labels=["Sin HD", "Con HD"])
-    disp.plot(ax=axes[i], colorbar=False, cmap="Reds")
-    axes[i].set_title(nombre, fontsize=12, color="#3a3a3a")
-
-axes[-1].set_visible(False)
-plt.suptitle("Matrices de confusión por modelo", fontsize=14, color="#3a3a3a")
-plt.tight_layout()
-plt.show()
-
-#  11. Curvas ROC comparativas 
-fig, ax = plt.subplots(figsize=(8, 6))
-
-colores_roc = [nude_palette[0], nude_palette[1], "#4A7C59", "#8B6914", "#6B3A5A"]
-
-for (nombre, grid), color in zip(grids_entrenados.items(), colores_roc):
-    y_proba = grid.predict_proba(X_test)[:, 1]
-    fpr, tpr, _ = roc_curve(y_test, y_proba)
-    auc = roc_auc_score(y_test, y_proba)
-    ax.plot(fpr, tpr, lw=2, color=color, label=f"{nombre} (AUC={auc:.3f})")
-
-ax.plot([0, 1], [0, 1], color="gray", linestyle="--", lw=1, label="Clasificador aleatorio")
-ax.set_xlabel("Tasa de Falsos Positivos", fontsize=11, color="#5a5a5a")
-ax.set_ylabel("Tasa de Verdaderos Positivos (Recall)", fontsize=11, color="#5a5a5a")
-ax.set_title("Comparación de Curvas ROC", fontsize=13, pad=15, color="#3a3a3a")
-ax.legend(loc="lower right", fontsize=9)
-ax.spines[["top", "right"]].set_visible(False)
-ax.spines[["left", "bottom"]].set_color("#d0d0d0")
-plt.tight_layout()
-plt.show()
-
-# 12. Curvas Precision-Recall comparativas 
-fig, ax = plt.subplots(figsize=(8, 6))
-
-for (nombre, grid), color in zip(grids_entrenados.items(), colores_roc):
-    y_proba = grid.predict_proba(X_test)[:, 1]
-    precision, recall, _ = precision_recall_curve(y_test, y_proba)
-    ax.plot(recall, precision, lw=2, color=color, label=nombre)
-
-ax.axhline(y=positivos/(negativos+positivos), color="gray",
-           linestyle="--", lw=1, label=f"Baseline ({positivos/(negativos+positivos):.2f})")
-ax.set_xlabel("Recall", fontsize=11, color="#5a5a5a")
-ax.set_ylabel("Precision", fontsize=11, color="#5a5a5a")
-ax.set_title("Curvas Precision-Recall", fontsize=13, pad=15, color="#3a3a3a")
-ax.legend(loc="upper right", fontsize=9)
-ax.spines[["top", "right"]].set_visible(False)
-ax.spines[["left", "bottom"]].set_color("#d0d0d0")
-plt.tight_layout()
-plt.show()
-
-# 13. Threshold tuning del mejor modelo 
-y_scores = mejor_grid.predict_proba(X_test)[:, 1]
-thresholds = np.linspace(0.1, 0.9, 100)
-recalls_t, precisions_t, f1s_t = [], [], []
-
-for t in thresholds:
-    y_pred_t = (y_scores >= t).astype(int)
-    recalls_t.append(recall_score(y_test, y_pred_t))
-    precisions_t.append(precision_score(y_test, y_pred_t, zero_division=0))
-    f1s_t.append(f1_score(y_test, y_pred_t, zero_division=0))
-
-# umbral con mejor F1
-best_t = thresholds[np.argmax(f1s_t)]
-print(f"\nUmbral óptimo (mejor F1): {best_t:.2f}")
-
-fig, ax = plt.subplots(figsize=(9, 5))
-ax.plot(thresholds, recalls_t,    color=nude_palette[0], lw=2, label="Recall")
-ax.plot(thresholds, precisions_t, color=nude_palette[1], lw=2, label="Precision")
-ax.plot(thresholds, f1s_t,        color="#4A7C59",        lw=2, label="F1")
-ax.axvline(best_t, color="gray", linestyle="--", lw=1.5, label=f"Umbral óptimo F1: {best_t:.2f}")
-ax.set_xlabel("Umbral de decisión", fontsize=11, color="#5a5a5a")
-ax.set_ylabel("Métrica", fontsize=11, color="#5a5a5a")
-ax.set_title(f"Threshold tuning — {mejor_nombre}", fontsize=13, pad=15, color="#3a3a3a")
-ax.legend(fontsize=10)
-ax.spines[["top", "right"]].set_visible(False)
-ax.spines[["left", "bottom"]].set_color("#d0d0d0")
-plt.tight_layout()
-plt.show()
-
-# evaluación con umbral óptimo
-y_pred_opt = (y_scores >= best_t).astype(int)
-print(f"\nEvaluación con umbral óptimo ({best_t:.2f}):")
-print(f"  Recall    : {recall_score(y_test, y_pred_opt):.4f}")
-print(f"  Precision : {precision_score(y_test, y_pred_opt):.4f}")
-print(f"  F1        : {f1_score(y_test, y_pred_opt):.4f}")
-print(f"  AUC-ROC   : {roc_auc_score(y_test, y_scores):.4f}")
-------------------
-
-
-[1;31m---------------------------------------------------------------------------[0m
-[1;31mNameError[0m                                 Traceback (most recent call last)
-Cell [1;32mIn[64], line 21[0m
-[0;32m     15[0m X_train, X_test, y_train, y_test [38;5;241m=[39m train_test_split(
-[0;32m     16[0m     X, y, test_size[38;5;241m=[39m[38;5;241m0.2[39m, random_state[38;5;241m=[39m[38;5;241m42[39m, stratify[38;5;241m=[39my
-[0;32m     17[0m )
-[0;32m     19[0m [38;5;66;03m#  3. Preprocesador corregido [39;00m
-[0;32m     20[0m [38;5;66;03m# MinMaxScaler solo a continuas, ordinales y binarias pasan sin escalar[39;00m
-[1;32m---> 21[0m preprocessor [38;5;241m=[39m [43mColumnTransformer[49m([
-[0;32m     22[0m     ([38;5;124m"[39m[38;5;124mnum[39m[38;5;124m"[39m, MinMaxScaler(), num_cols),
-[0;32m     23[0m     ([38;5;124m"[39m[38;5;124mord[39m[38;5;124m"[39m, [38;5;124m"[39m[38;5;124mpassthrough[39m[38;5;124m"[39m,  ord_cols),
-[0;32m     24[0m     ([38;5;124m"[39m[38;5;124mbin[39m[38;5;124m"[39m, [38;5;124m"[39m[38;5;124mpassthrough[39m[38;5;124m"[39m,  bin_cols)
-[0;32m     25[0m ])
-[0;32m     27[0m [38;5;66;03m#  4. scale_pos_weight para XGBoost[39;00m
-[0;32m     28[0m negativos [38;5;241m=[39m (y_train [38;5;241m==[39m [38;5;241m0[39m)[38;5;241m.[39msum()
-
-[1;31mNameError[0m: name 'ColumnTransformer' is not defined
+  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 1001, in async_execute_cell
+    exec_reply = await self.task_poll_for_reply
+  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 802, in _async_poll_for_reply
+    error_on_timeout_execute_reply = await self._async_handle_timeout(timeout, cell)
+  File "C:\Users\MSI TRUE GAMING\miniconda3\envs\ml_venv\lib\site-packages\nbclient\client.py", line 852, in _async_handle_timeout
+    raise CellTimeoutError.error_from_timeout_and_cell(
+nbclient.exceptions.CellTimeoutError: A cell timed out while it was being executed, after 30 seconds.
+The message was: Cell execution timed out.
+Here is a preview of the cell contents:
+-------------------
+['# =============================', '# Librerías básicas', '# =============================', 'import numpy as np', 'import pandas as pd']
+...
+['print(f"\\nEvaluación con umbral óptimo ({best_t:.2f}):")', 'print(f"  Recall    : {recall_score(y_test, y_pred_opt):.4f}")', 'print(f"  Precision : {precision_score(y_test, y_pred_opt):.4f}")', 'print(f"  F1        : {f1_score(y_test, y_pred_opt):.4f}")', 'print(f"  AUC-ROC   : {roc_auc_score(y_test, y_scores):.4f}")']
+-------------------
 
